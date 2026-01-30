@@ -6,6 +6,8 @@ Built for **GL.iNet GL-MT6000** (MediaTek MT7986) running **OpenWrt 24.10.4**, b
 
 ![Dashboard](https://img.shields.io/badge/OpenWrt-24.10-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
+![Dashboard Screenshot](screenshot.png)
+
 ## Features
 
 | Panel | Description |
