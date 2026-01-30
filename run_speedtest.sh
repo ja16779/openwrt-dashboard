@@ -1,34 +1,47 @@
 #!/bin/sh
-# Triggered by dashboard to run speedtest
+# Speedtest for both WAN interfaces using curl + Cloudflare
 RESULT_FILE="/tmp/speedtest_result.json"
 LOCK_FILE="/tmp/speedtest.lock"
 
-# Prevent concurrent runs
 if [ -f "$LOCK_FILE" ]; then
-    echo '{"status":"running"}'
     exit 0
 fi
 touch "$LOCK_FILE"
 
-echo '{"status":"running","ts":"'$(date +%H:%M)'"}' > "$RESULT_FILE"
+DL_URL="https://speed.cloudflare.com/__down?bytes=50000000"
+UL_URL="https://speed.cloudflare.com/__up"
+DURATION=8
 
-# Run speedtest-netperf (sequential mode, 10s per direction)
-OUTPUT=$(/usr/bin/speedtest-netperf.sh -t 10 -H netperf.bufferbloat.net -p 8.8.8.8 2>&1)
+to_mbps() {
+    awk "BEGIN{v=$1*8/1000000; printf \"%.1f\", v}"
+}
 
-DL=$(echo "$OUTPUT" | grep -i 'download' | grep -oE '[0-9]+\.[0-9]+' | head -1)
-UL=$(echo "$OUTPUT" | grep -i 'upload' | grep -oE '[0-9]+\.[0-9]+' | head -1)
-IDLE=$(echo "$OUTPUT" | grep -i 'idle.*latency' | grep -oE '[0-9]+\.[0-9]+' | head -1)
-DL_LAT=$(echo "$OUTPUT" | grep -i 'download.*latency' | grep -oE '[0-9]+\.[0-9]+' | head -1)
-UL_LAT=$(echo "$OUTPUT" | grep -i 'upload.*latency' | grep -oE '[0-9]+\.[0-9]+' | head -1)
+# --- WAN1 (eth1 - Telmex) ---
+echo '{"status":"running","phase":"wan1_download","ts":"'"$(date +%H:%M)"'"}' > "$RESULT_FILE"
+DL1=$(curl -o /dev/null -s -w '%{speed_download}' --max-time $DURATION --interface eth1 "$DL_URL" 2>/dev/null)
+DL1_MBPS=$(to_mbps "${DL1:-0}")
 
-[ -z "$DL" ] && DL=0
-[ -z "$UL" ] && UL=0
-[ -z "$IDLE" ] && IDLE=0
-[ -z "$DL_LAT" ] && DL_LAT=0
-[ -z "$UL_LAT" ] && UL_LAT=0
+echo '{"status":"running","phase":"wan1_upload","ts":"'"$(date +%H:%M)"'"}' > "$RESULT_FILE"
+UL1=$(dd if=/dev/urandom bs=1M count=10 2>/dev/null | curl -s -w '%{speed_upload}' --max-time $DURATION --interface eth1 -X POST -H "Content-Type: application/octet-stream" --data-binary @- "$UL_URL" 2>/dev/null | tail -1)
+UL1_MBPS=$(to_mbps "${UL1:-0}")
+
+PING1=$(ping -c 3 -W 1 -I eth1 1.1.1.1 2>/dev/null | awk -F'[/ ]' '/avg/{for(i=1;i<=NF;i++)if($i~/^[0-9]+\.[0-9]+$/){print $i;exit}}')
+[ -z "$PING1" ] && PING1="0"
+
+# --- WAN2 (lan5 - Megacable) ---
+echo '{"status":"running","phase":"wan2_download","ts":"'"$(date +%H:%M)"'"}' > "$RESULT_FILE"
+DL2=$(curl -o /dev/null -s -w '%{speed_download}' --max-time $DURATION --interface lan5 "$DL_URL" 2>/dev/null)
+DL2_MBPS=$(to_mbps "${DL2:-0}")
+
+echo '{"status":"running","phase":"wan2_upload","ts":"'"$(date +%H:%M)"'"}' > "$RESULT_FILE"
+UL2=$(dd if=/dev/urandom bs=1M count=10 2>/dev/null | curl -s -w '%{speed_upload}' --max-time $DURATION --interface lan5 -X POST -H "Content-Type: application/octet-stream" --data-binary @- "$UL_URL" 2>/dev/null | tail -1)
+UL2_MBPS=$(to_mbps "${UL2:-0}")
+
+PING2=$(ping -c 3 -W 1 -I lan5 1.1.1.1 2>/dev/null | awk -F'[/ ]' '/avg/{for(i=1;i<=NF;i++)if($i~/^[0-9]+\.[0-9]+$/){print $i;exit}}')
+[ -z "$PING2" ] && PING2="0"
 
 cat > "$RESULT_FILE" << EOF
-{"status":"done","dl":$DL,"ul":$UL,"idle_lat":$IDLE,"dl_lat":$DL_LAT,"ul_lat":$UL_LAT,"ts":"$(date '+%Y-%m-%d %H:%M')","raw":"$(echo "$OUTPUT" | tail -5 | tr '\n' '|' | sed 's/"/\\"/g')"}
+{"status":"done","wan1":{"dl":$DL1_MBPS,"ul":$UL1_MBPS,"ping":$PING1},"wan2":{"dl":$DL2_MBPS,"ul":$UL2_MBPS,"ping":$PING2},"ts":"$(date '+%Y-%m-%d %H:%M')"}
 EOF
 
 rm -f "$LOCK_FILE"
