@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 2em;
+            background: linear-gradient(90deg, #00d4ff, #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        .status-dot.online { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+        .status-dot.offline { background: #ff4757; box-shadow: 0 0 10px #ff4757; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .card h2 {
+            font-size: 0.9em;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .metric:last-child { border-bottom: none; }
+        .metric-value {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #00d4ff;
+        }
+        .metric-value.green { color: #00ff88; }
+        .metric-value.yellow { color: #ffa502; }
+        .metric-value.red { color: #ff4757; }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #00ff88);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        .progress-fill.warning { background: linear-gradient(90deg, #ffa502, #ff6348); }
+        .progress-fill.danger { background: linear-gradient(90deg, #ff4757, #ff3838); }
+        .client-list {
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .client-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            margin: 5px 0;
+            background: rgba(255,255,255,0.03);
+            border-radius: 8px;
+            font-size: 0.85em;
+        }
+        .client-name { color: #fff; flex: 1; }
+        .client-signal {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .signal-good { background: rgba(0,255,136,0.2); color: #00ff88; }
+        .signal-medium { background: rgba(255,165,2,0.2); color: #ffa502; }
+        .signal-weak { background: rgba(255,71,87,0.2); color: #ff4757; }
+        .band-tag {
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 8px;
+            background: rgba(0,212,255,0.2);
+            color: #00d4ff;
+        }
+        .traffic-item {
+            margin: 10px 0;
+        }
+        .traffic-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.85em;
+        }
+        .traffic-values span {
+            font-size: 0.75em;
+            color: #888;
+        }
+        .traffic-values .rx { color: #00ff88; }
+        .traffic-values .tx { color: #00d4ff; }
+        .big-number {
+            font-size: 3em;
+            font-weight: 700;
+            text-align: center;
+            background: linear-gradient(90deg, #00d4ff, #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .update-time {
+            text-align: center;
+            color: #666;
+            font-size: 0.8em;
+            margin-top: 20px;
+        }
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            .card { padding: 15px; }
+            .big-number { font-size: 2em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>NETWORK DASHBOARD</h1>
+        <p><span class="status-dot" id="inet-status"></span><span id="inet-text">Checking...</span></p>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>📊 Sistema</h2>
+            <div class="metric">
+                <span>Uptime</span>
+                <span class="metric-value" id="uptime">--</span>
+            </div>
+            <div class="metric">
+                <span>CPU Load</span>
+                <span class="metric-value" id="load">--</span>
+            </div>
+            <div class="metric">
+                <span>CPU Usage</span>
+                <div id="cpu-bars" style="display:flex;gap:4px;align-items:center;"></div>
+            </div>
+            <div class="metric">
+                <span>Temperatura</span>
+                <span class="metric-value" id="temp">--</span>
+            </div>
+            <div class="metric">
+                <span>RAM</span>
+                <span class="metric-value" id="ram">--</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="ram-bar" style="width:0%"></div></div>
+            <div class="metric" style="margin-top:10px;">
+                <span>Flash (overlay)</span>
+                <span style="font-size:0.8em;color:#888;"><span id="stor-root-used" style="color:#00d4ff;">--</span> / <span id="stor-root-total">--</span></span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="stor-root-bar" style="width:0%"></div></div>
+            <div class="metric">
+                <span>USB</span>
+                <span style="font-size:0.8em;color:#888;"><span id="stor-usb-used" style="color:#00d4ff;">--</span> / <span id="stor-usb-total">--</span></span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="stor-usb-bar" style="width:0%"></div></div>
+        </div>
+
+        <div class="card">
+            <h2>👥 Clientes Conectados</h2>
+            <div class="big-number" id="total-clients">--</div>
+            <div class="metric">
+                <span>WiFi 2.4 GHz</span>
+                <span class="metric-value green" id="wifi-2g">--</span>
+            </div>
+            <div class="metric">
+                <span>WiFi 5 GHz</span>
+                <span class="metric-value green" id="wifi-5g">--</span>
+            </div>
+            <div class="metric">
+                <span>Red IOT (192.168.8.x)</span>
+                <span class="metric-value" id="dhcp-iot">--</span>
+            </div>
+            <div class="metric">
+                <span>Red LAN (192.168.10.x)</span>
+                <span class="metric-value" id="dhcp-lan">--</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📈 Tráfico de Red</h2>
+            <div class="traffic-item">
+                <div class="traffic-label">
+                    <span>WAN1 (Telmex) <span class="status-dot" id="wan-status-dot" style="width:8px;height:8px;margin-left:5px;"></span><span id="wan-uptime" style="color:#888;font-size:0.8em;margin-left:5px;">--</span></span>
+                    <div class="traffic-values">
+                        <span class="rx">↓ <span id="wan-rx">--</span></span>
+                        <span class="tx">↑ <span id="wan-tx">--</span></span>
+                    </div>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" id="wan-bar" style="width:50%"></div></div>
+            </div>
+            <div class="traffic-item">
+                <div class="traffic-label">
+                    <span>WAN2 (Megacable) <span class="status-dot" id="wan2-status-dot" style="width:8px;height:8px;margin-left:5px;"></span><span id="wan2-uptime" style="color:#888;font-size:0.8em;margin-left:5px;">--</span></span>
+                    <div class="traffic-values">
+                        <span class="rx">↓ <span id="wan2-rx">--</span></span>
+                        <span class="tx">↑ <span id="wan2-tx">--</span></span>
+                    </div>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" id="wan2-bar" style="width:50%"></div></div>
+            </div>
+            <div class="traffic-item">
+                <div class="traffic-label">
+                    <span>LAN (192.168.10.x)</span>
+                    <div class="traffic-values">
+                        <span class="rx">↓ <span id="lan-rx">--</span></span>
+                        <span class="tx">↑ <span id="lan-tx">--</span></span>
+                    </div>
+                </div>
+            </div>
+            <div class="traffic-item">
+                <div class="traffic-label">
+                    <span>IOT (192.168.8.x)</span>
+                    <div class="traffic-values">
+                        <span class="rx">↓ <span id="iot-rx">--</span></span>
+                        <span class="tx">↑ <span id="iot-tx">--</span></span>
+                    </div>
+                </div>
+            </div>
+            <div class="metric" style="margin-top:15px">
+                <span>Conexiones activas</span>
+                <span class="metric-value" id="connections">--</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>⚡ SQM / QoS (CAKE)</h2>
+            <div class="traffic-item">
+                <div class="traffic-label">
+                    <span>WAN1 (Telmex)</span>
+                    <span style="font-size:0.8em;"><span id="sqm-wan-bw" style="color:#00d4ff;">--</span> → <span id="sqm-wan-cap" style="color:#00ff88;">--</span></span>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:8px;font-size:0.75em;">
+                    <div style="flex:1;background:rgba(255,71,87,0.2);padding:5px;border-radius:4px;text-align:center;">
+                        <div style="color:#ff4757;">Bulk</div>
+                        <div id="sqm-wan-bulk" style="color:#fff;font-weight:600;">--</div>
+                    </div>
+                    <div style="flex:1;background:rgba(0,212,255,0.2);padding:5px;border-radius:4px;text-align:center;">
+                        <div style="color:#00d4ff;">Best Effort</div>
+                        <div id="sqm-wan-be" style="color:#fff;font-weight:600;">--</div>
+                    </div>
+                    <div style="flex:1;background:rgba(255,165,2,0.2);padding:5px;border-radius:4px;text-align:center;">
+                        <div style="color:#ffa502;">Video</div>
+                        <div id="sqm-wan-video" style="color:#fff;font-weight:600;">--</div>
+                    </div>
+                    <div style="flex:1;background:rgba(0,255,136,0.2);padding:5px;border-radius:4px;text-align:center;">
+                        <div style="color:#00ff88;">Voice</div>
+                        <div id="sqm-wan-voice" style="color:#fff;font-weight:600;">--</div>
+                    </div>
+                </div>
+                <div style="font-size:0.7em;color:#666;margin-top:5px;text-align:right;">Drops: <span id="sqm-wan-drop" style="color:#ff4757;">--</span></div>
+            </div>
+            <div class="traffic-item" style="margin-top:15px;">
+                <div class="traffic-label">
+                    <span>WAN2 (Megacable)</span>
+                    <span style="font-size:0.8em;"><span id="sqm-wan2-bw" style="color:#00d4ff;">--</span> → <span id="sqm-wan2-cap" style="color:#00ff88;">--</span></span>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:8px;font-size:0.75em;">
+                    <div style="flex:1;background:rgba(255,71,87,0.2);padding:5px;border-radius:4px;text-align:center;">
+                        <div style="color:#ff4757;">Bulk</div>
+                        <div id="sqm-wan2-bulk" style="color:#fff;font-weight:600;">--</div>
+                    </div>
+                    <div style="flex:1;background:rgba(0,212,255,0.2);padding:5px;border-radius:4px;text-align:center;">
+                        <div style="color:#00d4ff;">Best Effort</div>
+                        <div id="sqm-wan2-be" style="color:#fff;font-weight:600;">--</div>
+                    </div>
+                    <div style="flex:1;background:rgba(255,165,2,0.2);padding:5px;border-radius:4px;text-align:center;">
+                        <div style="color:#ffa502;">Video</div>
+                        <div id="sqm-wan2-video" style="color:#fff;font-weight:600;">--</div>
+                    </div>
+                    <div style="flex:1;background:rgba(0,255,136,0.2);padding:5px;border-radius:4px;text-align:center;">
+                        <div style="color:#00ff88;">Voice</div>
+                        <div id="sqm-wan2-voice" style="color:#fff;font-weight:600;">--</div>
+                    </div>
+                </div>
+                <div style="font-size:0.7em;color:#666;margin-top:5px;text-align:right;">Drops: <span id="sqm-wan2-drop" style="color:#ff4757;">--</span></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Bufferbloat (Latencia CAKE)</h2>
+            <div style="margin-bottom:15px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <span style="font-size:0.85em;">WAN1 (Telmex)</span>
+                    <span id="wan1-bloat-grade" style="padding:2px 8px;border-radius:4px;font-size:0.8em;font-weight:600;">--</span>
+                </div>
+                <div style="display:flex;gap:6px;font-size:0.7em;">
+                    <div style="flex:1;text-align:center;">
+                        <div style="color:#ff4757;margin-bottom:2px;">Bulk</div>
+                        <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:40px;position:relative;overflow:hidden;">
+                            <div id="wan1-bloat-bulk-bar" style="position:absolute;bottom:0;width:100%;background:linear-gradient(to top,#ff4757,#ffa502);transition:height 0.3s;"></div>
+                        </div>
+                        <div style="margin-top:2px;"><span id="wan1-bloat-bulk-pk" style="color:#ff4757;">--</span></div>
+                        <div style="color:#888;"><span id="wan1-bloat-bulk-av">--</span></div>
+                    </div>
+                    <div style="flex:1;text-align:center;">
+                        <div style="color:#00d4ff;margin-bottom:2px;">Best Effort</div>
+                        <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:40px;position:relative;overflow:hidden;">
+                            <div id="wan1-bloat-be-bar" style="position:absolute;bottom:0;width:100%;background:linear-gradient(to top,#00d4ff,#00ff88);transition:height 0.3s;"></div>
+                        </div>
+                        <div style="margin-top:2px;"><span id="wan1-bloat-be-pk" style="color:#00d4ff;">--</span></div>
+                        <div style="color:#888;"><span id="wan1-bloat-be-av">--</span></div>
+                    </div>
+                    <div style="flex:1;text-align:center;">
+                        <div style="color:#ffa502;margin-bottom:2px;">Video</div>
+                        <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:40px;position:relative;overflow:hidden;">
+                            <div id="wan1-bloat-video-bar" style="position:absolute;bottom:0;width:100%;background:linear-gradient(to top,#ffa502,#00ff88);transition:height 0.3s;"></div>
+                        </div>
+                        <div style="margin-top:2px;"><span id="wan1-bloat-video-pk" style="color:#ffa502;">--</span></div>
+                        <div style="color:#888;"><span id="wan1-bloat-video-av">--</span></div>
+                    </div>
+                    <div style="flex:1;text-align:center;">
+                        <div style="color:#00ff88;margin-bottom:2px;">Voice</div>
+                        <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:40px;position:relative;overflow:hidden;">
+                            <div id="wan1-bloat-voice-bar" style="position:absolute;bottom:0;width:100%;background:linear-gradient(to top,#00ff88,#00d4ff);transition:height 0.3s;"></div>
+                        </div>
+                        <div style="margin-top:2px;"><span id="wan1-bloat-voice-pk" style="color:#00ff88;">--</span></div>
+                        <div style="color:#888;"><span id="wan1-bloat-voice-av">--</span></div>
+                    </div>
+                </div>
+            </div>
+            <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <span style="font-size:0.85em;">WAN2 (Megacable)</span>
+                    <span id="wan2-bloat-grade" style="padding:2px 8px;border-radius:4px;font-size:0.8em;font-weight:600;">--</span>
+                </div>
+                <div style="display:flex;gap:6px;font-size:0.7em;">
+                    <div style="flex:1;text-align:center;">
+                        <div style="color:#ff4757;margin-bottom:2px;">Bulk</div>
+                        <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:40px;position:relative;overflow:hidden;">
+                            <div id="wan2-bloat-bulk-bar" style="position:absolute;bottom:0;width:100%;background:linear-gradient(to top,#ff4757,#ffa502);transition:height 0.3s;"></div>
+                        </div>
+                        <div style="margin-top:2px;"><span id="wan2-bloat-bulk-pk" style="color:#ff4757;">--</span></div>
+                        <div style="color:#888;"><span id="wan2-bloat-bulk-av">--</span></div>
+                    </div>
+                    <div style="flex:1;text-align:center;">
+                        <div style="color:#00d4ff;margin-bottom:2px;">Best Effort</div>
+                        <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:40px;position:relative;overflow:hidden;">
+                            <div id="wan2-bloat-be-bar" style="position:absolute;bottom:0;width:100%;background:linear-gradient(to top,#00d4ff,#00ff88);transition:height 0.3s;"></div>
+                        </div>
+                        <div style="margin-top:2px;"><span id="wan2-bloat-be-pk" style="color:#00d4ff;">--</span></div>
+                        <div style="color:#888;"><span id="wan2-bloat-be-av">--</span></div>
+                    </div>
+                    <div style="flex:1;text-align:center;">
+                        <div style="color:#ffa502;margin-bottom:2px;">Video</div>
+                        <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:40px;position:relative;overflow:hidden;">
+                            <div id="wan2-bloat-video-bar" style="position:absolute;bottom:0;width:100%;background:linear-gradient(to top,#ffa502,#00ff88);transition:height 0.3s;"></div>
+                        </div>
+                        <div style="margin-top:2px;"><span id="wan2-bloat-video-pk" style="color:#ffa502;">--</span></div>
+                        <div style="color:#888;"><span id="wan2-bloat-video-av">--</span></div>
+                    </div>
+                    <div style="flex:1;text-align:center;">
+                        <div style="color:#00ff88;margin-bottom:2px;">Voice</div>
+                        <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:40px;position:relative;overflow:hidden;">
+                            <div id="wan2-bloat-voice-bar" style="position:absolute;bottom:0;width:100%;background:linear-gradient(to top,#00ff88,#00d4ff);transition:height 0.3s;"></div>
+                        </div>
+                        <div style="margin-top:2px;"><span id="wan2-bloat-voice-pk" style="color:#00ff88;">--</span></div>
+                        <div style="color:#888;"><span id="wan2-bloat-voice-av">--</span></div>
+                    </div>
+                </div>
+            </div>
+            <div style="font-size:0.65em;color:#666;margin-top:10px;text-align:center;">pk = peak delay | av = avg delay | <5ms = A+ | <15ms = A | <30ms = B | >30ms = C</div>
+        </div>
+
+        <div class="card">
+            <h2>🌐 WAN Health</h2>
+            <div style="margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:0.85em;">WAN1 (Telmex)</span>
+                    <span class="status-dot" id="wh-wan-dot"></span>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:6px;font-size:0.78em;">
+                    <div style="flex:1;background:rgba(255,255,255,0.05);padding:6px 8px;border-radius:6px;">
+                        <div style="color:#666;">IP</div>
+                        <div id="wh-wan-ip" style="color:#00d4ff;font-weight:600;">--</div>
+                    </div>
+                    <div style="flex:1;background:rgba(255,255,255,0.05);padding:6px 8px;border-radius:6px;">
+                        <div style="color:#666;">Gateway</div>
+                        <div id="wh-wan-gw" style="color:#888;">--</div>
+                    </div>
+                    <div style="flex:1;background:rgba(255,255,255,0.05);padding:6px 8px;border-radius:6px;">
+                        <div style="color:#666;">Ping</div>
+                        <div id="wh-wan-ping" style="font-weight:600;">--</div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:4px;font-size:0.72em;color:#888;">
+                    <span>Online: <span id="wh-wan-online" style="color:#00ff88;">--</span></span>
+                    <span>Load Balance: <span id="wh-wan-lb" style="color:#ffa502;">--</span></span>
+                </div>
+            </div>
+            <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-size:0.85em;">WAN2 (Megacable)</span>
+                    <span class="status-dot" id="wh-wan2-dot"></span>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:6px;font-size:0.78em;">
+                    <div style="flex:1;background:rgba(255,255,255,0.05);padding:6px 8px;border-radius:6px;">
+                        <div style="color:#666;">IP</div>
+                        <div id="wh-wan2-ip" style="color:#00d4ff;font-weight:600;">--</div>
+                    </div>
+                    <div style="flex:1;background:rgba(255,255,255,0.05);padding:6px 8px;border-radius:6px;">
+                        <div style="color:#666;">Gateway</div>
+                        <div id="wh-wan2-gw" style="color:#888;">--</div>
+                    </div>
+                    <div style="flex:1;background:rgba(255,255,255,0.05);padding:6px 8px;border-radius:6px;">
+                        <div style="color:#666;">Ping</div>
+                        <div id="wh-wan2-ping" style="font-weight:600;">--</div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:10px;margin-top:4px;font-size:0.72em;color:#888;">
+                    <span>Online: <span id="wh-wan2-online" style="color:#00ff88;">--</span></span>
+                    <span>Load Balance: <span id="wh-wan2-lb" style="color:#ffa502;">--</span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📡 WiFi Radios</h2>
+            <div id="wifi-radios">
+                <p style="color:#666">Cargando...</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔍 DNS Analytics</h2>
+            <div style="display:flex;gap:8px;margin-bottom:10px;font-size:0.75em;">
+                <div style="flex:1;text-align:center;background:rgba(0,212,255,0.1);padding:8px;border-radius:6px;">
+                    <div style="color:#666;">Queries</div>
+                    <div id="dns-total" style="color:#00d4ff;font-size:1.4em;font-weight:700;">--</div>
+                </div>
+                <div style="flex:1;text-align:center;background:rgba(0,255,136,0.1);padding:8px;border-radius:6px;">
+                    <div style="color:#666;">Cache Hit</div>
+                    <div id="dns-hit" style="color:#00ff88;font-size:1.4em;font-weight:700;">--%</div>
+                </div>
+                <div style="flex:1;text-align:center;background:rgba(255,165,2,0.1);padding:8px;border-radius:6px;">
+                    <div style="color:#666;">Forwarded</div>
+                    <div id="dns-fwd" style="color:#ffa502;font-size:1.4em;font-weight:700;">--</div>
+                </div>
+                <div style="flex:1;text-align:center;background:rgba(255,71,87,0.1);padding:8px;border-radius:6px;">
+                    <div style="color:#666;">Blocked</div>
+                    <div id="dns-blocked" style="color:#ff4757;font-size:1.4em;font-weight:700;">--</div>
+                </div>
+            </div>
+            <div style="font-size:0.75em;color:#888;margin-bottom:4px;">Top Dominios</div>
+            <div class="client-list" id="dns-top" style="max-height:150px;">
+                <p style="color:#666">Cargando...</p>
+            </div>
+            <div style="font-size:0.75em;color:#888;margin:8px 0 4px;">Top Clientes DNS</div>
+            <div id="dns-top-clients" style="font-size:0.8em;">
+                <p style="color:#666">Cargando...</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🛡️ Firewall Log</h2>
+            <div style="display:flex;gap:10px;margin-bottom:10px;font-size:0.78em;">
+                <div style="text-align:center;background:rgba(255,71,87,0.1);padding:8px 15px;border-radius:6px;">
+                    <div style="color:#666;">Eventos</div>
+                    <div id="fw-total" style="color:#ff4757;font-size:1.4em;font-weight:700;">--</div>
+                </div>
+                <div style="flex:1;">
+                    <div style="color:#888;font-size:0.85em;margin-bottom:3px;">Top IPs bloqueadas</div>
+                    <div id="fw-top-src" style="font-size:0.85em;color:#666;">--</div>
+                </div>
+                <div style="flex:1;">
+                    <div style="color:#888;font-size:0.85em;margin-bottom:3px;">Top Puertos</div>
+                    <div id="fw-top-port" style="font-size:0.85em;color:#666;">--</div>
+                </div>
+            </div>
+            <div style="font-size:0.75em;color:#888;margin-bottom:4px;">Eventos recientes</div>
+            <div class="client-list" id="fw-log" style="max-height:160px;font-size:0.75em;">
+                <p style="color:#666">Cargando...</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>⚡ Speedtest</h2>
+            <div style="text-align:center;margin-bottom:10px;">
+                <button id="speedtest-btn" onclick="runSpeedtest()" style="background:linear-gradient(90deg,#00d4ff,#00ff88);border:none;color:#1a1a2e;padding:8px 24px;border-radius:8px;font-weight:700;cursor:pointer;font-size:0.9em;">Iniciar Test</button>
+            </div>
+            <div style="display:flex;gap:8px;font-size:0.78em;">
+                <div style="flex:1;text-align:center;background:rgba(0,255,136,0.1);padding:10px;border-radius:6px;">
+                    <div style="color:#666;">Download</div>
+                    <div id="st-dl" style="color:#00ff88;font-size:1.6em;font-weight:700;">--</div>
+                    <div style="color:#666;">Mbps</div>
+                </div>
+                <div style="flex:1;text-align:center;background:rgba(0,212,255,0.1);padding:10px;border-radius:6px;">
+                    <div style="color:#666;">Upload</div>
+                    <div id="st-ul" style="color:#00d4ff;font-size:1.6em;font-weight:700;">--</div>
+                    <div style="color:#666;">Mbps</div>
+                </div>
+                <div style="flex:1;text-align:center;background:rgba(255,165,2,0.1);padding:10px;border-radius:6px;">
+                    <div style="color:#666;">Idle Latency</div>
+                    <div id="st-ping" style="color:#ffa502;font-size:1.6em;font-weight:700;">--</div>
+                    <div style="color:#666;">ms</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:6px;font-size:0.72em;">
+                <div style="flex:1;text-align:center;background:rgba(255,255,255,0.05);padding:5px;border-radius:4px;">
+                    <span style="color:#666;">DL Latency:</span> <span id="st-dl-lat" style="color:#00ff88;">--</span> ms
+                </div>
+                <div style="flex:1;text-align:center;background:rgba(255,255,255,0.05);padding:5px;border-radius:4px;">
+                    <span style="color:#666;">UL Latency:</span> <span id="st-ul-lat" style="color:#00d4ff;">--</span> ms
+                </div>
+            </div>
+            <div id="st-ts" style="text-align:center;color:#666;font-size:0.7em;margin-top:6px;">--</div>
+        </div>
+
+        <div class="card" style="grid-column: span 2;">
+            <h2>📈 Historial de Trafico (por hora)</h2>
+            <div id="traffic-chart" style="display:flex;align-items:flex-end;gap:2px;height:120px;padding:5px 0;">
+                <p style="color:#666;align-self:center;width:100%;text-align:center;">Cargando...</p>
+            </div>
+            <div style="display:flex;justify-content:center;gap:15px;font-size:0.7em;margin-top:5px;">
+                <span><span style="color:#00ff88;">■</span> WAN1 RX</span>
+                <span><span style="color:#00d4ff;">■</span> WAN1 TX</span>
+                <span><span style="color:#ffa502;">■</span> WAN2 RX</span>
+                <span><span style="color:#ff4757;">■</span> WAN2 TX</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📶 Clientes WiFi</h2>
+            <div class="client-list" id="wifi-list">
+                <p style="color:#666">Cargando...</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🔥 Top Conexiones</h2>
+            <div class="client-list" id="top-list">
+                <p style="color:#666">Cargando...</p>
+            </div>
+        </div>
+
+        <div class="card" style="grid-column: span 2;">
+            <h2>⏱️ DHCP Leases</h2>
+            <div style="overflow-x:auto;max-height:250px;">
+                <table style="width:100%;font-size:0.8em;border-collapse:collapse;">
+                    <thead>
+                        <tr style="color:#888;text-align:left;border-bottom:1px solid rgba(255,255,255,0.1);">
+                            <th style="padding:8px;">IP</th>
+                            <th style="padding:8px;">Nombre</th>
+                            <th style="padding:8px;">MAC</th>
+                            <th style="padding:8px;">Expira en</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lease-list">
+                        <tr><td colspan="4" style="color:#666;padding:10px;">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card" style="grid-column: span 2;">
+            <h2>🔗 Conexiones Activas (por tráfico)</h2>
+            <div style="overflow-x:auto;">
+                <table style="width:100%;font-size:0.8em;border-collapse:collapse;" id="conn-table">
+                    <thead>
+                        <tr style="color:#888;text-align:left;border-bottom:1px solid rgba(255,255,255,0.1);">
+                            <th style="padding:8px;">Proto</th>
+                            <th style="padding:8px;">Origen</th>
+                            <th style="padding:8px;">Destino</th>
+                            <th style="padding:8px;">Puerto</th>
+                            <th style="padding:8px;">Bytes</th>
+                            <th style="padding:8px;">Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="conn-list">
+                        <tr><td colspan="6" style="color:#666;padding:10px;">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <p class="update-time">Actualizado: <span id="last-update">--</span></p>
+
+    <script>
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatUptime(seconds) {
+            const d = Math.floor(seconds / 86400);
+            const h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            if (d > 0) return d + 'd ' + h + 'h';
+            if (h > 0) return h + 'h ' + m + 'm';
+            return m + 'm';
+        }
+
+        function getSignalClass(signal) {
+            if (signal >= -50) return 'signal-good';
+            if (signal >= -70) return 'signal-medium';
+            return 'signal-weak';
+        }
+
+        function formatLeaseTime(seconds) {
+            if (seconds <= 0) return '<span style="color:#ff4757">EXPIRADO</span>';
+            const d = Math.floor(seconds / 86400);
+            const h = Math.floor((seconds % 86400) / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            if (d > 0) return '<span style="color:#00ff88">' + d + 'd ' + h + 'h</span>';
+            if (h > 0) return '<span style="color:#ffa502">' + h + 'h ' + m + 'm</span>';
+            return '<span style="color:#ff4757">' + m + 'm</span>';
+        }
+
+        function updateDashboard() {
+            fetch('/cgi-bin/dashboard_api.sh')
+                .then(r => r.json())
+                .then(data => {
+                    // Sistema
+                    document.getElementById('uptime').textContent = formatUptime(data.system.uptime);
+                    document.getElementById('load').textContent = data.system.load;
+                    document.getElementById('temp').textContent = data.system.temp + '°C';
+                    document.getElementById('ram').textContent = data.system.mem_pct + '%';
+
+                    // CPU bars
+                    if (data.system.cpu && data.system.cpu.length > 0) {
+                        const cpuBars = document.getElementById('cpu-bars');
+                        cpuBars.innerHTML = data.system.cpu.map((pct, i) => {
+                            const color = pct > 80 ? '#ff4757' : pct > 50 ? '#ffa502' : '#00ff88';
+                            return `<div style="display:flex;flex-direction:column;align-items:center;font-size:0.6em;">
+                                <div style="width:12px;height:30px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;display:flex;flex-direction:column-reverse;">
+                                    <div style="width:100%;height:${pct}%;background:${color};border-radius:3px;"></div>
+                                </div>
+                                <span style="color:#888;margin-top:2px;">${pct}%</span>
+                            </div>`;
+                        }).join('');
+                    }
+
+                    const ramBar = document.getElementById('ram-bar');
+                    ramBar.style.width = data.system.mem_pct + '%';
+                    ramBar.className = 'progress-fill' + (data.system.mem_pct > 90 ? ' danger' : data.system.mem_pct > 70 ? ' warning' : '');
+
+                    // Storage
+                    if (data.system.storage) {
+                        function updateStor(prefix, s) {
+                            document.getElementById(prefix + '-used').textContent = formatBytes(s.used_kb * 1024);
+                            document.getElementById(prefix + '-total').textContent = formatBytes(s.total_kb * 1024);
+                            const bar = document.getElementById(prefix + '-bar');
+                            bar.style.width = s.pct + '%';
+                            bar.className = 'progress-fill' + (s.pct > 90 ? ' danger' : s.pct > 70 ? ' warning' : '');
+                        }
+                        updateStor('stor-root', data.system.storage.root);
+                        updateStor('stor-usb', data.system.storage.usb);
+                    }
+
+                    // Internet
+                    const inetDot = document.getElementById('inet-status');
+                    const inetText = document.getElementById('inet-text');
+                    inetDot.className = 'status-dot ' + (data.system.internet ? 'online' : 'offline');
+                    inetText.textContent = data.system.internet ? 'Online' : 'Offline';
+
+                    // Clientes
+                    document.getElementById('total-clients').textContent = data.clients.wifi_total;
+                    document.getElementById('wifi-2g').textContent = data.clients.wifi_2g;
+                    document.getElementById('wifi-5g').textContent = data.clients.wifi_5g;
+                    document.getElementById('dhcp-iot').textContent = data.clients.dhcp_iot;
+                    document.getElementById('dhcp-lan').textContent = data.clients.dhcp_lan;
+                    document.getElementById('connections').textContent = data.system.connections;
+
+                    // Tráfico
+                    document.getElementById('wan-rx').textContent = formatBytes(data.traffic.wan.rx);
+                    document.getElementById('wan-tx').textContent = formatBytes(data.traffic.wan.tx);
+                    document.getElementById('wan-status-dot').className = 'status-dot ' + (data.traffic.wan.status === 'online' ? 'online' : 'offline');
+                    document.getElementById('wan-uptime').textContent = data.traffic.wan.online || '--';
+                    document.getElementById('wan2-rx').textContent = formatBytes(data.traffic.wan2.rx);
+                    document.getElementById('wan2-tx').textContent = formatBytes(data.traffic.wan2.tx);
+                    document.getElementById('wan2-status-dot').className = 'status-dot ' + (data.traffic.wan2.status === 'online' ? 'online' : 'offline');
+                    document.getElementById('wan2-uptime').textContent = data.traffic.wan2.online || '--';
+                    document.getElementById('lan-rx').textContent = formatBytes(data.traffic.lan.rx);
+                    document.getElementById('lan-tx').textContent = formatBytes(data.traffic.lan.tx);
+                    document.getElementById('iot-rx').textContent = formatBytes(data.traffic.iot.rx);
+                    document.getElementById('iot-tx').textContent = formatBytes(data.traffic.iot.tx);
+
+                    // SQM stats
+                    if (data.sqm) {
+                        document.getElementById('sqm-wan-bw').textContent = data.sqm.wan.bw || '--';
+                        document.getElementById('sqm-wan-cap').textContent = data.sqm.wan.capacity || '--';
+                        document.getElementById('sqm-wan-drop').textContent = data.sqm.wan.dropped || 0;
+                        document.getElementById('sqm-wan-bulk').textContent = formatBytes(data.sqm.wan.bulk || 0);
+                        document.getElementById('sqm-wan-be').textContent = formatBytes(data.sqm.wan.besteffort || 0);
+                        document.getElementById('sqm-wan-video').textContent = formatBytes(data.sqm.wan.video || 0);
+                        document.getElementById('sqm-wan-voice').textContent = formatBytes(data.sqm.wan.voice || 0);
+                        document.getElementById('sqm-wan2-bw').textContent = data.sqm.wan2.bw || '--';
+                        document.getElementById('sqm-wan2-cap').textContent = data.sqm.wan2.capacity || '--';
+                        document.getElementById('sqm-wan2-drop').textContent = data.sqm.wan2.dropped || 0;
+                        document.getElementById('sqm-wan2-bulk').textContent = formatBytes(data.sqm.wan2.bulk || 0);
+                        document.getElementById('sqm-wan2-be').textContent = formatBytes(data.sqm.wan2.besteffort || 0);
+                        document.getElementById('sqm-wan2-video').textContent = formatBytes(data.sqm.wan2.video || 0);
+                        document.getElementById('sqm-wan2-voice').textContent = formatBytes(data.sqm.wan2.voice || 0);
+
+                        // Bufferbloat metrics
+                        function parseDelay(str) {
+                            if (!str || str === '--') return 0;
+                            const match = str.match(/(\d+(?:\.\d+)?)(us|ms|s)/);
+                            if (!match) return 0;
+                            const val = parseFloat(match[1]);
+                            const unit = match[2];
+                            if (unit === 'us') return val / 1000;
+                            if (unit === 'ms') return val;
+                            if (unit === 's') return val * 1000;
+                            return val;
+                        }
+                        function getBloatGrade(delays) {
+                            const maxPk = Math.max(...delays.map(d => parseDelay(d)));
+                            if (maxPk < 5) return { grade: 'A+', color: '#00ff88', bg: 'rgba(0,255,136,0.2)' };
+                            if (maxPk < 15) return { grade: 'A', color: '#00d4ff', bg: 'rgba(0,212,255,0.2)' };
+                            if (maxPk < 30) return { grade: 'B', color: '#ffa502', bg: 'rgba(255,165,2,0.2)' };
+                            return { grade: 'C', color: '#ff4757', bg: 'rgba(255,71,87,0.2)' };
+                        }
+                        function updateBloatUI(prefix, bloat) {
+                            if (!bloat) return;
+                            const tins = ['bulk', 'be', 'video', 'voice'];
+                            const grade = getBloatGrade(bloat.pk);
+                            const gradeEl = document.getElementById(prefix + '-bloat-grade');
+                            gradeEl.textContent = grade.grade;
+                            gradeEl.style.background = grade.bg;
+                            gradeEl.style.color = grade.color;
+                            tins.forEach((tin, i) => {
+                                const pk = bloat.pk[i] || '0us';
+                                const av = bloat.av[i] || '0us';
+                                document.getElementById(prefix + '-bloat-' + tin + '-pk').textContent = pk;
+                                document.getElementById(prefix + '-bloat-' + tin + '-av').textContent = av;
+                                const pkMs = parseDelay(pk);
+                                const barHeight = Math.min(100, (pkMs / 50) * 100);
+                                document.getElementById(prefix + '-bloat-' + tin + '-bar').style.height = barHeight + '%';
+                            });
+                        }
+                        updateBloatUI('wan1', data.sqm.wan.bloat);
+                        updateBloatUI('wan2', data.sqm.wan2.bloat);
+                    }
+
+                    // WAN Health
+                    if (data.wan_health) {
+                        function updateWH(prefix, w) {
+                            document.getElementById(prefix + '-dot').className = 'status-dot ' + (w.status === 'online' ? 'online' : 'offline');
+                            document.getElementById(prefix + '-ip').textContent = w.ip;
+                            document.getElementById(prefix + '-gw').textContent = w.gw;
+                            const pingEl = document.getElementById(prefix + '-ping');
+                            if (w.ping > 0) {
+                                pingEl.textContent = w.ping.toFixed(1) + ' ms';
+                                pingEl.style.color = w.ping < 20 ? '#00ff88' : w.ping < 50 ? '#ffa502' : '#ff4757';
+                            } else {
+                                pingEl.textContent = 'TIMEOUT';
+                                pingEl.style.color = '#ff4757';
+                            }
+                            document.getElementById(prefix + '-online').textContent = w.online || '--';
+                            document.getElementById(prefix + '-lb').textContent = w.lb || '--';
+                        }
+                        updateWH('wh-wan', data.wan_health.wan);
+                        updateWH('wh-wan2', data.wan_health.wan2);
+                    }
+
+                    // WiFi Radios
+                    if (data.wifi_radios && data.wifi_radios.length > 0) {
+                        const radiosEl = document.getElementById('wifi-radios');
+                        radiosEl.innerHTML = data.wifi_radios.map(r => {
+                            const snr = Math.abs(r.noise) - 20;
+                            const noiseColor = r.noise < -85 ? '#00ff88' : r.noise < -75 ? '#ffa502' : '#ff4757';
+                            const neighColor = r.neighbors <= 5 ? '#00ff88' : r.neighbors <= 15 ? '#ffa502' : '#ff4757';
+                            return `
+                            <div style="margin-bottom:12px;padding:8px;background:rgba(255,255,255,0.03);border-radius:8px;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                    <span style="font-weight:600;">${r.band} <span style="color:#888;font-weight:400;font-size:0.8em;">${r.ssid}</span></span>
+                                    <span style="background:rgba(0,212,255,0.2);color:#00d4ff;padding:2px 8px;border-radius:4px;font-size:0.75em;">${r.hwmode}</span>
+                                </div>
+                                <div style="display:flex;gap:8px;font-size:0.72em;">
+                                    <div style="flex:1;text-align:center;background:rgba(255,255,255,0.05);padding:5px;border-radius:4px;">
+                                        <div style="color:#666;">Canal</div>
+                                        <div style="color:#00d4ff;font-weight:600;font-size:1.2em;">${r.channel}</div>
+                                        <div style="color:#888;font-size:0.85em;">${r.freq}</div>
+                                    </div>
+                                    <div style="flex:1;text-align:center;background:rgba(255,255,255,0.05);padding:5px;border-radius:4px;">
+                                        <div style="color:#666;">Modo</div>
+                                        <div style="color:#ffa502;font-weight:600;font-size:1.2em;">${r.htmode}</div>
+                                    </div>
+                                    <div style="flex:1;text-align:center;background:rgba(255,255,255,0.05);padding:5px;border-radius:4px;">
+                                        <div style="color:#666;">Tx Power</div>
+                                        <div style="color:#fff;font-weight:600;font-size:1.2em;">${r.txpower} dBm</div>
+                                    </div>
+                                    <div style="flex:1;text-align:center;background:rgba(255,255,255,0.05);padding:5px;border-radius:4px;">
+                                        <div style="color:#666;">Noise</div>
+                                        <div style="color:${noiseColor};font-weight:600;font-size:1.2em;">${r.noise} dBm</div>
+                                    </div>
+                                    <div style="flex:1;text-align:center;background:rgba(255,255,255,0.05);padding:5px;border-radius:4px;">
+                                        <div style="color:#666;">APs vecinos</div>
+                                        <div style="color:${neighColor};font-weight:600;font-size:1.2em;">${r.neighbors}</div>
+                                    </div>
+                                </div>
+                            </div>`;
+                        }).join('');
+                    }
+
+                    // WiFi clients list
+                    const wifiList = document.getElementById('wifi-list');
+                    if (data.wifi_clients && data.wifi_clients.length > 0) {
+                        wifiList.innerHTML = data.wifi_clients.map(c => `
+                            <div class="client-item">
+                                <span class="client-name">${c.name || c.mac.substring(0,8)}<span class="band-tag">${c.band}</span><span style="color:#888;font-size:0.75em;margin-left:5px;">${c.ssid || ''}</span></span>
+                                <span class="client-signal ${getSignalClass(c.signal)}">${c.signal} dBm</span>
+                            </div>
+                        `).join('');
+                    } else {
+                        wifiList.innerHTML = '<p style="color:#666">Sin clientes WiFi</p>';
+                    }
+
+                    // Top clients
+                    const topList = document.getElementById('top-list');
+                    if (data.top_clients && data.top_clients.length > 0) {
+                        topList.innerHTML = data.top_clients.map(c => `
+                            <div class="client-item">
+                                <span class="client-name">${c.ip}</span>
+                                <span class="metric-value" style="font-size:1em">${c.conns}</span>
+                            </div>
+                        `).join('');
+                    } else {
+                        topList.innerHTML = '<p style="color:#666">Sin datos</p>';
+                    }
+
+                    // DHCP Leases table
+                    const leaseList = document.getElementById('lease-list');
+                    if (data.dhcp_leases && data.dhcp_leases.length > 0) {
+                        const sorted = data.dhcp_leases.sort((a,b) => a.remain - b.remain);
+                        leaseList.innerHTML = sorted.map(l => {
+                            const network = l.ip.includes('192.168.8.') ? 'IOT' : 'LAN';
+                            const netColor = network === 'IOT' ? '#ffa502' : '#00d4ff';
+                            return `
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:6px;color:#fff;">${l.ip} <span style="color:${netColor};font-size:0.7em;">${network}</span></td>
+                                <td style="padding:6px;color:#888;">${l.name}</td>
+                                <td style="padding:6px;color:#666;font-size:0.85em;">${l.mac.substring(0,8)}...</td>
+                                <td style="padding:6px;">${formatLeaseTime(l.remain)}</td>
+                            </tr>
+                        `}).join('');
+                    } else {
+                        leaseList.innerHTML = '<tr><td colspan="4" style="color:#666;padding:10px;">Sin leases</td></tr>';
+                    }
+
+                    // Active connections table
+                    const connList = document.getElementById('conn-list');
+                    if (data.active_conns && data.active_conns.length > 0) {
+                        connList.innerHTML = data.active_conns.map(c => {
+                            const stateColor = c.state === 'EST' ? '#00ff88' : c.state === 'TW' ? '#ffa502' : '#888';
+                            const srcName = c.src_dns && c.src_dns !== '-' ? c.src_dns : '';
+                            const dstName = c.dst_dns && c.dst_dns !== '-' ? c.dst_dns : '';
+                            return `
+                            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <td style="padding:6px;"><span style="background:${c.proto==='TCP'?'rgba(0,212,255,0.2)':'rgba(255,165,2,0.2)'};color:${c.proto==='TCP'?'#00d4ff':'#ffa502'};padding:2px 6px;border-radius:4px;font-size:0.8em;">${c.proto}</span></td>
+                                <td style="padding:6px;"><span style="color:#fff;">${c.src}</span><span style="color:#666">:${c.sport}</span>${srcName ? '<br><span style="color:#00ff88;font-size:0.75em;">'+srcName+'</span>' : ''}</td>
+                                <td style="padding:6px;"><span style="color:#888;">${c.dst}</span>${dstName ? '<br><span style="color:#ffa502;font-size:0.75em;">'+dstName+'</span>' : ''}</td>
+                                <td style="padding:6px;color:#00d4ff;">${c.dport}</td>
+                                <td style="padding:6px;color:#ffa502;">${formatBytes(c.bytes)}</td>
+                                <td style="padding:6px;color:${stateColor};">${c.state || '-'}</td>
+                            </tr>
+                        `}).join('');
+                    } else {
+                        connList.innerHTML = '<tr><td colspan="6" style="color:#666;padding:10px;">Sin conexiones activas</td></tr>';
+                    }
+
+                    // DNS Analytics
+                    if (data.dns) {
+                        document.getElementById('dns-total').textContent = data.dns.total;
+                        document.getElementById('dns-hit').textContent = data.dns.hit_pct + '%';
+                        document.getElementById('dns-fwd').textContent = data.dns.forwarded;
+                        document.getElementById('dns-blocked').textContent = data.dns.blocked;
+                        if (data.dns.top && data.dns.top.length > 0) {
+                            document.getElementById('dns-top').innerHTML = data.dns.top.map(d => `
+                                <div class="client-item">
+                                    <span style="color:#fff;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${d.d}</span>
+                                    <span style="color:#00d4ff;font-weight:600;">${d.c}</span>
+                                </div>`).join('');
+                        }
+                        if (data.dns.top_clients && data.dns.top_clients.length > 0) {
+                            document.getElementById('dns-top-clients').innerHTML = data.dns.top_clients.map(c => `
+                                <span style="display:inline-block;background:rgba(255,255,255,0.05);padding:2px 8px;border-radius:4px;margin:2px;font-size:0.85em;">
+                                    <span style="color:#888;">${c.ip}</span> <span style="color:#00d4ff;font-weight:600;">${c.c}</span>
+                                </span>`).join('');
+                        }
+                    }
+
+                    // Firewall Log
+                    if (data.firewall) {
+                        document.getElementById('fw-total').textContent = data.firewall.total;
+                        if (data.firewall.top_src && data.firewall.top_src.length > 0) {
+                            document.getElementById('fw-top-src').innerHTML = data.firewall.top_src.map(s =>
+                                `<div style="display:flex;justify-content:space-between;"><span style="color:#ff4757;">${s.ip}</span><span style="color:#888;">${s.c}</span></div>`
+                            ).join('');
+                        } else {
+                            document.getElementById('fw-top-src').innerHTML = '<span style="color:#00ff88;">Sin bloqueos</span>';
+                        }
+                        if (data.firewall.top_port && data.firewall.top_port.length > 0) {
+                            document.getElementById('fw-top-port').innerHTML = data.firewall.top_port.map(p =>
+                                `<div style="display:flex;justify-content:space-between;"><span style="color:#ffa502;">:${p.port}</span><span style="color:#888;">${p.c}</span></div>`
+                            ).join('');
+                        } else {
+                            document.getElementById('fw-top-port').innerHTML = '<span style="color:#00ff88;">Limpio</span>';
+                        }
+                        if (data.firewall.log && data.firewall.log.length > 0) {
+                            document.getElementById('fw-log').innerHTML = data.firewall.log.map(e => `
+                                <div style="padding:3px 6px;margin:2px 0;background:rgba(255,71,87,0.05);border-radius:4px;display:flex;gap:6px;">
+                                    <span style="color:#666;white-space:nowrap;">${e.ts}</span>
+                                    <span style="color:#ff4757;font-weight:600;">${e.action}</span>
+                                    <span style="color:#ffa502;">${e.proto}</span>
+                                    <span style="color:#fff;">${e.src}</span>
+                                    <span style="color:#888;">→ :${e.port}</span>
+                                </div>`).join('');
+                        } else {
+                            document.getElementById('fw-log').innerHTML = '<p style="color:#00ff88;">Sin eventos recientes</p>';
+                        }
+                    }
+
+                    // Speedtest
+                    if (data.speedtest && data.speedtest.status === 'done') {
+                        document.getElementById('st-dl').textContent = data.speedtest.dl || '--';
+                        document.getElementById('st-ul').textContent = data.speedtest.ul || '--';
+                        document.getElementById('st-ping').textContent = data.speedtest.idle_lat || '--';
+                        document.getElementById('st-dl-lat').textContent = data.speedtest.dl_lat || '--';
+                        document.getElementById('st-ul-lat').textContent = data.speedtest.ul_lat || '--';
+                        document.getElementById('st-ts').textContent = data.speedtest.ts || '--';
+                    }
+
+                    // Traffic History Chart
+                    if (data.traffic_history && data.traffic_history.length > 0) {
+                        const chart = document.getElementById('traffic-chart');
+                        const sorted = data.traffic_history.sort((a,b) => a.h - b.h);
+                        const maxVal = Math.max(...sorted.map(e => Math.max(e.wrx||0, e.wtx||0, e.w2rx||0, e.w2tx||0)), 1);
+                        const hours = [];
+                        for (let i = 0; i < 24; i++) hours[i] = sorted.find(e => e.h === i);
+                        chart.innerHTML = hours.map((e, i) => {
+                            if (!e) return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;min-width:0;">
+                                <div style="width:100%;height:100%;"></div>
+                                <span style="font-size:0.55em;color:#444;">${i}</span></div>`;
+                            const h = (v) => Math.max(1, (v / maxVal) * 100);
+                            return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:0;min-width:0;" title="H${i}: WAN1 ↓${formatBytes(e.wrx)} ↑${formatBytes(e.wtx)} | WAN2 ↓${formatBytes(e.w2rx)} ↑${formatBytes(e.w2tx)}">
+                                <div style="width:100%;display:flex;gap:1px;align-items:flex-end;height:100px;">
+                                    <div style="flex:1;background:#00ff88;height:${h(e.wrx)}%;border-radius:1px 1px 0 0;min-height:1px;"></div>
+                                    <div style="flex:1;background:#00d4ff;height:${h(e.wtx)}%;border-radius:1px 1px 0 0;min-height:1px;"></div>
+                                    <div style="flex:1;background:#ffa502;height:${h(e.w2rx)}%;border-radius:1px 1px 0 0;min-height:1px;"></div>
+                                    <div style="flex:1;background:#ff4757;height:${h(e.w2tx)}%;border-radius:1px 1px 0 0;min-height:1px;"></div>
+                                </div>
+                                <span style="font-size:0.55em;color:#666;">${i}</span>
+                            </div>`;
+                        }).join('');
+                    }
+
+                    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+                })
+                .catch(err => console.error('Error:', err));
+        }
+
+        function runSpeedtest() {
+            const btn = document.getElementById('speedtest-btn');
+            btn.textContent = 'Ejecutando...';
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            document.getElementById('st-dl').textContent = '...';
+            document.getElementById('st-ul').textContent = '...';
+            document.getElementById('st-ping').textContent = '...';
+            fetch('/cgi-bin/speedtest_trigger.sh')
+                .then(r => r.json())
+                .then(d => {
+                    document.getElementById('st-ts').textContent = 'Test iniciado, resultados en ~30s...';
+                    setTimeout(() => {
+                        btn.textContent = 'Iniciar Test';
+                        btn.disabled = false;
+                        btn.style.opacity = '1';
+                    }, 35000);
+                })
+                .catch(() => {
+                    btn.textContent = 'Iniciar Test';
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                });
+        }
+
+        updateDashboard();
+        setInterval(updateDashboard, 3000);
+    </script>
+</body>
+</html>
