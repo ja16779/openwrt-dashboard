@@ -53,8 +53,31 @@ Browser                    OpenWrt Router
 | `speedtest_trigger.sh` | `/www/cgi-bin/speedtest_trigger.sh` | CGI endpoint to trigger speed test |
 | `run_speedtest.sh` | `/usr/bin/run_speedtest.sh` | Curl-based speed test for both WAN interfaces |
 | `traffic_history.sh` | `/usr/bin/traffic_history.sh` | Hourly traffic delta logger |
+| `install_dashboard.sh` | Local machine | Complete installer: copy files + configure cron/dnsmasq/firewall |
 
 ## Installation
+
+### One-command installer (complete)
+
+```bash
+# Default target: root@192.168.8.1
+sh install_dashboard.sh
+
+# Custom router target
+sh install_dashboard.sh root@192.168.8.1
+
+# Optional: explicit WAN firewall zone index
+sh install_dashboard.sh root@192.168.8.1 1
+```
+
+Installer actions:
+- Copies all dashboard files to the router
+- Sets executable permissions
+- Adds idempotent hourly cron for traffic history
+- Enables dnsmasq query logging to `/tmp/dnsmasq.log`
+- Enables WAN firewall logging (auto-detects zone index when possible)
+
+### Manual installation (equivalent steps)
 
 ```bash
 # Copy files to router
