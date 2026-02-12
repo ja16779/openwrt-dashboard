@@ -6,8 +6,6 @@ Built for **GL.iNet GL-MT6000** (MediaTek MT7986) running **OpenWrt 24.10.4**, b
 
 ![Dashboard](https://img.shields.io/badge/OpenWrt-24.10-blue) ![License](https://img.shields.io/badge/license-MIT-green)
 
-![Dashboard Screenshot](screenshot.png)
-
 ## Features
 
 | Panel | Description |
@@ -69,13 +67,16 @@ scp traffic_history.sh root@192.168.8.1:/usr/bin/traffic_history.sh
 # Set permissions
 ssh root@192.168.8.1 'chmod +x /www/cgi-bin/dashboard_api.sh /www/cgi-bin/speedtest_trigger.sh /usr/bin/run_speedtest.sh /usr/bin/traffic_history.sh'
 
-# Add hourly cron for traffic history
-ssh root@192.168.8.1 'echo "0 * * * * /usr/bin/traffic_history.sh" >> /etc/crontabs/root && /etc/init.d/cron restart'
+# Add hourly cron for traffic history (idempotent)
+ssh root@192.168.8.1 'grep -q "/usr/bin/traffic_history.sh" /etc/crontabs/root || echo "0 * * * * /usr/bin/traffic_history.sh" >> /etc/crontabs/root; /etc/init.d/cron restart'
 
-# Enable DNS query logging (needed for DNS analytics and hostname resolution)
-ssh root@192.168.8.1 'uci set dhcp.@dnsmasq[0].logqueries="1" && uci commit dhcp && /etc/init.d/dnsmasq restart'
+# Enable DNS query logging to file (needed for DNS analytics and hostname resolution)
+ssh root@192.168.8.1 'uci set dhcp.@dnsmasq[0].logqueries="1" && uci set dhcp.@dnsmasq[0].logfacility="/tmp/dnsmasq.log" && uci commit dhcp && /etc/init.d/dnsmasq restart'
 
-# Enable firewall logging (needed for firewall panel)
+# Identify WAN zone index first (example output: firewall.@zone[1].name='wan')
+ssh root@192.168.8.1 "uci show firewall | grep \"\\.name='wan'\""
+
+# Enable firewall logging (replace [1] with your actual WAN zone index)
 ssh root@192.168.8.1 'uci set firewall.@zone[1].log="1" && uci set firewall.@zone[1].log_limit="60/minute" && uci commit firewall && fw4 reload'
 ```
 
@@ -87,12 +88,12 @@ Access at: `http://192.168.8.1/dashboard.html`
 - `curl` with HTTPS support (for speedtest)
 - `tc` (for SQM/CAKE metrics)
 - `mwan3` (for dual WAN status, optional)
-- `dnsmasq` with `logqueries` enabled (for DNS analytics)
+- `dnsmasq` with `logqueries=1` and `logfacility=/tmp/dnsmasq.log` (for DNS analytics)
 - SQM with CAKE qdisc (for bufferbloat metrics, optional)
 
 ## Customization
 
-The dashboard is designed for a dual-WAN setup with these interfaces:
+The dashboard is designed for a dual-WAN setup with these default interfaces:
 
 | Interface | Role |
 |-----------|------|
@@ -101,7 +102,21 @@ The dashboard is designed for a dual-WAN setup with these interfaces:
 | `br-lan` | LAN (192.168.10.x) |
 | `br-lan.8` | IOT VLAN (192.168.8.x) |
 
-To adapt to your setup, edit the interface names in `dashboard_api.sh`.
+To adapt to your setup, update interface names in all scripts:
+
+| Script | What to update |
+|--------|----------------|
+| `dashboard_api.sh` | WAN/WAN2/LAN/IOT interface names, ping source interfaces, SQM devices |
+| `run_speedtest.sh` | `--interface eth1` and `--interface lan5` for both curl and ping |
+| `traffic_history.sh` | RX/TX counters read from `/sys/class/net/<iface>/statistics/*` |
+
+Tip: replace `eth1`, `lan5`, `br-lan`, and `br-lan.8` consistently.
+
+## Security Notes
+
+- The CGI endpoints are intended for trusted LAN use.
+- `dashboard_api.sh` and `speedtest_trigger.sh` send `Access-Control-Allow-Origin: *`; do not expose router web UI to untrusted networks without proper access controls.
+- Running speedtests on demand can generate significant WAN traffic.
 
 ## License
 
