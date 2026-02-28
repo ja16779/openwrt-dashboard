@@ -16,16 +16,20 @@ to_mbps() {
     awk "BEGIN{v=$1*8/1000000; printf \"%.1f\", v}"
 }
 
-# --- WAN1 (eth1 - Telmex) ---
+# Auto-detect WAN device (supports PPPoE)
+wan_dev=$(ip route show default 2>/dev/null | awk '/dev pppoe-/{print $5;exit}')
+[ -z "$wan_dev" ] && wan_dev=$(ip route show default 2>/dev/null | awk 'NR==1{print $5}')
+
+# --- WAN1 (Telmex) ---
 echo '{"status":"running","phase":"wan1_download","ts":"'"$(date +%H:%M)"'"}' > "$RESULT_FILE"
-DL1=$(curl -o /dev/null -s -w '%{speed_download}' --max-time $DURATION --interface eth1 "$DL_URL" 2>/dev/null)
+DL1=$(curl -o /dev/null -s -w '%{speed_download}' --max-time $DURATION --interface "$wan_dev" "$DL_URL" 2>/dev/null)
 DL1_MBPS=$(to_mbps "${DL1:-0}")
 
 echo '{"status":"running","phase":"wan1_upload","ts":"'"$(date +%H:%M)"'"}' > "$RESULT_FILE"
-UL1=$(dd if=/dev/urandom bs=1M count=10 2>/dev/null | curl -s -w '%{speed_upload}' --max-time $DURATION --interface eth1 -X POST -H "Content-Type: application/octet-stream" --data-binary @- "$UL_URL" 2>/dev/null | tail -1)
+UL1=$(dd if=/dev/urandom bs=1M count=10 2>/dev/null | curl -s -w '%{speed_upload}' --max-time $DURATION --interface "$wan_dev" -X POST -H "Content-Type: application/octet-stream" --data-binary @- "$UL_URL" 2>/dev/null | tail -1)
 UL1_MBPS=$(to_mbps "${UL1:-0}")
 
-PING1=$(ping -c 3 -W 1 -I eth1 1.1.1.1 2>/dev/null | awk -F'[/ ]' '/avg/{for(i=1;i<=NF;i++)if($i~/^[0-9]+\.[0-9]+$/){print $i;exit}}')
+PING1=$(ping -c 3 -W 1 -I "$wan_dev" 1.1.1.1 2>/dev/null | awk -F'[/ ]' '/avg/{for(i=1;i<=NF;i++)if($i~/^[0-9]+\.[0-9]+$/){print $i;exit}}')
 [ -z "$PING1" ] && PING1="0"
 
 # --- WAN2 (lan5 - Megacable) ---
