@@ -51,8 +51,8 @@ for iface in wlan0 wlan0-1 wlan1 wlan1-1; do
 done
 WIFI_TOTAL=$((WIFI_2G+WIFI_5G))
 
-DHCP_IOT=$(grep -c '192.168.8.' /tmp/dhcp.leases 2>/dev/null || echo 0)
-DHCP_LAN=$(grep -c '192.168.10.' /tmp/dhcp.leases 2>/dev/null || echo 0)
+DHCP_IOT=$(grep -c '192.168.8.' /tmp/dhcp.leases 2>/dev/null || true)
+DHCP_LAN=$(grep -c '192.168.10.' /tmp/dhcp.leases 2>/dev/null || true)
 
 rx_eth1=$(cat /sys/class/net/eth1/statistics/rx_bytes 2>/dev/null || echo 0)
 tx_eth1=$(cat /sys/class/net/eth1/statistics/tx_bytes 2>/dev/null || echo 0)
@@ -157,8 +157,10 @@ sort -u /tmp/dns_cache.tmp > /tmp/dns_cache2.tmp && mv /tmp/dns_cache2.tmp /tmp/
 awk '{print $3,$4}' /tmp/dhcp.leases 2>/dev/null >> /tmp/dns_cache.tmp
 
 # WAN Health: IPs, gateways, ping latency
-wan_ip=$(ip -4 addr show eth1 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1)
-wan_gw=$(ip route show default dev eth1 2>/dev/null | awk '{print $3}' | head -1)
+wan_dev=$(ip route show default 2>/dev/null | awk '/dev pppoe-/{print $5;exit}')
+[ -z "$wan_dev" ] && wan_dev=$(ip route show default 2>/dev/null | awk 'NR==1{print $5}')
+wan_ip=$(ip -4 addr show "$wan_dev" 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1)
+wan_gw=$(ip route show default dev "$wan_dev" 2>/dev/null | awk '{print $3}' | head -1)
 wan2_ip=$(ip -4 addr show lan5 2>/dev/null | awk '/inet /{print $2}' | cut -d/ -f1)
 wan2_gw=$(ip route show default dev lan5 2>/dev/null | awk '{print $3}' | head -1)
 [ -z "$wan_ip" ] && wan_ip="--"
@@ -166,14 +168,14 @@ wan2_gw=$(ip route show default dev lan5 2>/dev/null | awk '{print $3}' | head -
 [ -z "$wan2_ip" ] && wan2_ip="--"
 [ -z "$wan2_gw" ] && wan2_gw="--"
 # Ping via each WAN (1 packet, 1s timeout)
-ping_wan=$(ping -c1 -W1 -I eth1 8.8.8.8 2>/dev/null | awk -F'[/ ]' '/avg/{for(i=1;i<=NF;i++)if($i~/^[0-9]+\.[0-9]+$/){print $i;exit}}')
+ping_wan=$(ping -c1 -W1 -I "$wan_dev" 8.8.8.8 2>/dev/null | awk -F'[/ ]' '/avg/{for(i=1;i<=NF;i++)if($i~/^[0-9]+\.[0-9]+$/){print $i;exit}}')
 ping_wan2=$(ping -c1 -W1 -I lan5 8.8.8.8 2>/dev/null | awk -F'[/ ]' '/avg/{for(i=1;i<=NF;i++)if($i~/^[0-9]+\.[0-9]+$/){print $i;exit}}')
 [ -z "$ping_wan" ] && ping_wan="-1"
 [ -z "$ping_wan2" ] && ping_wan2="-1"
 # mwan3 policy
 mwan_policy=$(echo "$mwan_out" | awk '/^balanced:/{found=1;next}found&&/^ /{print;next}found{exit}' | awk '{gsub(/[() ]/,"");printf "{\"iface\":\"%s\",\"pct\":\"%s\"},",substr($0,1,index($0,"%")-1),substr($0,index($0,"%")-2)}' 2>/dev/null | sed 's/,$//')
 # Simplify: just extract percentages
-mwan_wan_pct=$(echo "$mwan_out" | grep -A5 '^balanced:' | grep 'wan ' | grep -o '[0-9]*%' | head -1)
+mwan_wan_pct=$(echo "$mwan_out" | grep -A5 '^balanced:' | grep ' wan ' | grep -o '[0-9]*%' | head -1)
 mwan_wan2_pct=$(echo "$mwan_out" | grep -A5 '^balanced:' | grep 'secondwan' | grep -o '[0-9]*%' | head -1)
 [ -z "$mwan_wan_pct" ] && mwan_wan_pct="0%"
 [ -z "$mwan_wan2_pct" ] && mwan_wan2_pct="0%"
@@ -198,10 +200,10 @@ done
 wifi_radio_json=$(echo "$wifi_radio_json" | sed 's/,$//')
 
 # DNS Analytics
-dns_total=$(grep -c 'query\[A\]' /tmp/dnsmasq.log 2>/dev/null || echo 0)
-dns_cached=$(grep -c 'cached' /tmp/dnsmasq.log 2>/dev/null || echo 0)
-dns_forwarded=$(grep -c 'forwarded' /tmp/dnsmasq.log 2>/dev/null || echo 0)
-dns_blocked=$(grep -c 'NXDOMAIN\|/etc/adblock' /tmp/dnsmasq.log 2>/dev/null || echo 0)
+dns_total=$(grep -c 'query\[A\]' /tmp/dnsmasq.log 2>/dev/null || true)
+dns_cached=$(grep -c 'cached' /tmp/dnsmasq.log 2>/dev/null || true)
+dns_forwarded=$(grep -c 'forwarded' /tmp/dnsmasq.log 2>/dev/null || true)
+dns_blocked=$(grep -c 'NXDOMAIN\|/etc/adblock' /tmp/dnsmasq.log 2>/dev/null || true)
 if [ "$dns_total" -gt 0 ]; then
     dns_hit_pct=$((dns_cached * 100 / (dns_cached + dns_forwarded + 1)))
 else
@@ -224,7 +226,7 @@ fw_json=$(logread 2>/dev/null | grep -iE 'DROP|REJECT|fw4' | tail -15 | awk '{
     }
     if(src!="")printf"{\"ts\":\"%s\",\"src\":\"%s\",\"dst\":\"%s\",\"port\":\"%s\",\"proto\":\"%s\",\"action\":\"%s\"},",ts,src,dst,dpt,proto,act
 }' | sed 's/,$//')
-fw_total=$(logread 2>/dev/null | grep -ciE 'DROP|REJECT|fw4' || echo 0)
+fw_total=$(logread 2>/dev/null | grep -ciE 'DROP|REJECT|fw4' || true)
 fw_top_src=$(logread 2>/dev/null | grep -iE 'DROP|REJECT' | grep -oE 'SRC=[0-9.]+' | sed 's/SRC=//' | sort | uniq -c | sort -rn | head -5 | awk '{printf"{\"ip\":\"%s\",\"c\":%d},",$2,$1}' | sed 's/,$//')
 fw_top_port=$(logread 2>/dev/null | grep -iE 'DROP|REJECT' | grep -oE 'DPT=[0-9]+' | sed 's/DPT=//' | sort | uniq -c | sort -rn | head -5 | awk '{printf"{\"port\":%s,\"c\":%d},",$2,$1}' | sed 's/,$//')
 
